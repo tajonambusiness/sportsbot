@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const MARKET_PRICE = 44
-const FALLBACK_OPEN_METEO = 63
-const FALLBACK_NWS = 58
-const MOCK_ACCUWEATHER = 70
+const FALLBACKS = {
+  accuweather: 70,
+  nws: 58,
+  openMeteo: 63,
+}
+
+const defaultMarket = {
+  question: 'Will it rain in New York City tomorrow?',
+  platform: 'Kalshi',
+  marketType: 'Rain Market',
+  location: {
+    city: 'New York City',
+    state: 'NY',
+    country: 'US',
+    latitude: 40.7128,
+    longitude: -74.006,
+    accuweatherLocationKey: '',
+  },
+}
 
 const nextEdges = [
   { market: 'Will it rain in Miami tomorrow?', platform: 'Polymarket', forecast: '59%', price: '43¢', edge: '+16%', action: 'Watch', tone: 'watch' },
@@ -16,35 +32,49 @@ const toneClass = {
   skip: 'text-skip border-skip/60 bg-skip/10',
 }
 
+function sourceResult(name, value, isLive, error = '') {
+  return {
+    name,
+    value,
+    status: isLive ? 'LIVE' : 'MOCK',
+    isLive,
+    error,
+  }
+}
+
 export default function App() {
-  const [openMeteo, setOpenMeteo] = useState({ value: FALLBACK_OPEN_METEO, live: false })
-  const [nws, setNws] = useState({ value: FALLBACK_NWS, live: false })
+  const [market] = useState(defaultMarket)
+  const [sources, setSources] = useState([
+    sourceResult('AccuWeather', FALLBACKS.accuweather, false, 'Using mock seed value'),
+    sourceResult('NWS', FALLBACKS.nws, false, 'Using mock seed value'),
+    sourceResult('Open-Meteo', FALLBACKS.openMeteo, false, 'Using mock seed value'),
+  ])
   const [lastWeatherUpdate, setLastWeatherUpdate] = useState(new Date())
 
   useEffect(() => {
     const controller = new AbortController()
+    const { location } = market
 
     async function loadOpenMeteo() {
       try {
         const url =
-          'https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060&daily=precipitation_probability_max&timezone=America%2FNew_York&forecast_days=2'
+          `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&daily=precipitation_probability_max&timezone=auto&forecast_days=2`
         const response = await fetch(url, { signal: controller.signal })
         if (!response.ok) throw new Error('Open-Meteo request failed')
         const data = await response.json()
         const probability = data?.daily?.precipitation_probability_max?.[1]
         if (typeof probability === 'number' && probability >= 0 && probability <= 100) {
-          setOpenMeteo({ value: Math.round(probability), live: true })
-          return
+          return sourceResult('Open-Meteo', Math.round(probability), true)
         }
-        throw new Error('Open-Meteo probability missing')
-      } catch {
-        setOpenMeteo({ value: FALLBACK_OPEN_METEO, live: false })
+        throw new Error('Missing tomorrow precipitation probability')
+      } catch (error) {
+        return sourceResult('Open-Meteo', FALLBACKS.openMeteo, false, error?.message || 'Fallback used')
       }
     }
 
     async function loadNws() {
       try {
-        const pointsRes = await fetch('https://api.weather.gov/points/40.7128,-74.0060', {
+        const pointsRes = await fetch(`https://api.weather.gov/points/${location.latitude},${location.longitude}`, {
           signal: controller.signal,
           headers: { Accept: 'application/geo+json' },
         })
@@ -73,51 +103,89 @@ export default function App() {
 
         if (tomorrowValues.length) {
           const avg = Math.round(tomorrowValues.reduce((a, b) => a + b, 0) / tomorrowValues.length)
-          setNws({ value: avg, live: true })
-          return
+          return sourceResult('NWS', avg, true)
         }
 
         throw new Error('NWS tomorrow precipitation missing')
-      } catch {
-        setNws({ value: FALLBACK_NWS, live: false })
+      } catch (error) {
+        return sourceResult('NWS', FALLBACKS.nws, false, error?.message || 'Fallback used')
       }
     }
 
-    Promise.allSettled([loadOpenMeteo(), loadNws()]).finally(() => {
+    async function loadAccuWeather() {
+      const apiKey = import.meta.env.VITE_ACCUWEATHER_API_KEY
+      if (!apiKey) {
+        return sourceResult('AccuWeather', FALLBACKS.accuweather, false, 'Missing VITE_ACCUWEATHER_API_KEY')
+      }
+
+      try {
+        let locationKey = location.accuweatherLocationKey
+
+        if (!locationKey) {
+          const lookupUrl = `https://dataservice.accuweather.com/locations/v1/cities/geoposition/search?apikey=${apiKey}&q=${location.latitude},${location.longitude}`
+          const lookupRes = await fetch(lookupUrl, { signal: controller.signal })
+          if (!lookupRes.ok) throw new Error('AccuWeather location lookup failed')
+          const lookupData = await lookupRes.json()
+          locationKey = lookupData?.Key
+        }
+
+        if (!locationKey) throw new Error('AccuWeather location key missing')
+
+        const forecastUrl = `https://dataservice.accuweather.com/forecasts/v1/daily/1day/${locationKey}?apikey=${apiKey}&details=true&metric=true`
+        const forecastRes = await fetch(forecastUrl, { signal: controller.signal })
+        if (!forecastRes.ok) throw new Error('AccuWeather forecast failed')
+        const forecastData = await forecastRes.json()
+
+        const dayChance = forecastData?.DailyForecasts?.[0]?.Day?.PrecipitationProbability
+        const nightChance = forecastData?.DailyForecasts?.[0]?.Night?.PrecipitationProbability
+
+        const vals = [dayChance, nightChance].filter((v) => typeof v === 'number')
+        if (vals.length) {
+          const probability = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+          return sourceResult('AccuWeather', probability, true)
+        }
+
+        throw new Error('AccuWeather precipitation probability missing')
+      } catch (error) {
+        return sourceResult('AccuWeather', FALLBACKS.accuweather, false, error?.message || 'Fallback used')
+      }
+    }
+
+    Promise.allSettled([loadAccuWeather(), loadNws(), loadOpenMeteo()]).then((results) => {
+      const normalized = results.map((r, idx) => {
+        if (r.status === 'fulfilled') return r.value
+        return [
+          sourceResult('AccuWeather', FALLBACKS.accuweather, false, 'Unhandled error'),
+          sourceResult('NWS', FALLBACKS.nws, false, 'Unhandled error'),
+          sourceResult('Open-Meteo', FALLBACKS.openMeteo, false, 'Unhandled error'),
+        ][idx]
+      })
+      setSources(normalized)
       setLastWeatherUpdate(new Date())
     })
 
     return () => controller.abort()
-  }, [])
-
-  const sourceData = useMemo(
-    () => [
-      { name: 'AccuWeather', value: MOCK_ACCUWEATHER, live: false, lockedMock: true },
-      { name: 'NWS', value: nws.value, live: nws.live },
-      { name: 'Open-Meteo', value: openMeteo.value, live: openMeteo.live },
-    ],
-    [nws, openMeteo],
-  )
+  }, [market])
 
   const forecastProbability = useMemo(() => {
-    const values = sourceData.map((s) => s.value)
+    const values = sources.map((s) => s.value)
     return Math.round(values.reduce((a, b) => a + b, 0) / values.length)
-  }, [sourceData])
+  }, [sources])
 
   const sourceAgreement = useMemo(() => {
-    const values = sourceData.map((s) => s.value)
+    const values = sources.map((s) => s.value)
     const spread = Math.max(...values) - Math.min(...values)
     return Math.max(0, Math.min(100, 100 - spread * 2))
-  }, [sourceData])
+  }, [sources])
 
   const edgeValue = forecastProbability - MARKET_PRICE
   const edgeDisplay = `${edgeValue >= 0 ? '+' : ''}${edgeValue}%`
 
   const confidence = useMemo(() => {
-    const liveCount = sourceData.filter((s) => s.live).length
+    const liveCount = sources.filter((s) => s.isLive).length
     const liveBoost = liveCount * 6
     return Math.max(35, Math.min(96, Math.round(sourceAgreement * 0.65 + 20 + liveBoost)))
-  }, [sourceAgreement, sourceData])
+  }, [sourceAgreement, sources])
 
   const action = edgeValue >= 8 && confidence >= 65 ? 'POSSIBLE YES ↑' : edgeValue >= 0 ? 'WATCH' : 'SKIP'
 
@@ -139,8 +207,8 @@ export default function App() {
 
         <section className="space-y-3 rounded-2xl border border-electric/30 bg-gradient-to-b from-slate-900/95 to-slate-950 p-3.5 shadow-glow sm:space-y-4 sm:p-4 md:p-6">
           <div>
-            <p className="text-lg font-semibold leading-tight sm:text-xl md:text-3xl">Will it rain in New York City tomorrow?</p>
-            <p className="mt-1 text-sm text-slate-400 md:text-base">Kalshi • Rain Market</p>
+            <p className="text-lg font-semibold leading-tight sm:text-xl md:text-3xl">{market.question}</p>
+            <p className="mt-1 text-sm text-slate-400 md:text-base">{market.platform} • {market.marketType} • {market.location.city}, {market.location.state}</p>
           </div>
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
@@ -175,15 +243,13 @@ export default function App() {
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
             <p className="mb-2 text-[11px] uppercase text-slate-400 sm:text-xs">Sources</p>
             <div className="space-y-1.5 sm:space-y-2">
-              {sourceData.map((source) => (
+              {sources.map((source) => (
                 <div key={source.name} className="flex items-center justify-between text-sm">
                   <span className="inline-flex items-center gap-2">
                     {source.name}
-                    {source.name === 'AccuWeather' ? null : (
-                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${source.live ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
-                        {source.live ? 'LIVE' : 'MOCK'}
-                      </span>
-                    )}
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${source.isLive ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
+                      {source.status}
+                    </span>
                   </span>
                   <span className="font-semibold text-electric">{source.value}%</span>
                 </div>
