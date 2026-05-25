@@ -1,11 +1,8 @@
 const sourceData = [
-  { name: 'AccuWeather', value: 70, status: 'MOCK', error: 'Fallback value' },
-  { name: 'NWS', value: 58, status: 'MOCK', error: 'Fallback value' },
-  { name: 'Open-Meteo', value: 62, status: 'LIVE', error: '' },
+  { name: 'AccuWeather', value: 70 },
+  { name: 'NWS', value: 58 },
+  { name: 'Open-Meteo', value: 62 },
 ]
-
-const sourceAgreementLabel = 'Mixed'
-const lastWeatherUpdate = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
 const nextEdges = [
   { market: 'Will it rain in Miami tomorrow?', platform: 'Polymarket', forecast: '59%', price: '43¢', edge: '+16%', action: 'Watch', tone: 'watch' },
@@ -67,31 +64,11 @@ export default function App() {
             <p className="mb-2 text-[11px] uppercase text-slate-400 sm:text-xs">Sources</p>
             <div className="space-y-1.5 sm:space-y-2">
               {sourceData.map((source) => (
-                <div key={source.name} className="flex items-start justify-between gap-3 text-sm">
-                  <div>
-                    <span className="inline-flex items-center gap-2">
-                      {source.name}
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${source.status === 'LIVE' ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
-                        {source.status}
-                      </span>
-                    </span>
-                    {source.status === 'MOCK' && source.error && (
-                      <p className="mt-1 text-[10px] text-watch/90 sm:text-[11px]">{source.error}</p>
-                    )}
-                  </div>
+                <div key={source.name} className="flex items-center justify-between text-sm">
+                  <span>{source.name}</span>
                   <span className="font-semibold text-electric">{source.value}%</span>
                 </div>
               ))}
-            </div>
-            <div className="mt-3 space-y-2 border-t border-slate-800 pt-2.5 text-xs sm:text-sm">
-              <div className="flex items-center justify-between">
-                <span className="uppercase tracking-wide text-slate-400">Source Agreement:</span>
-                <span className="font-semibold text-watch">{sourceAgreementLabel}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="uppercase tracking-wide text-slate-400">Last Weather Update:</span>
-                <span className="font-semibold text-electric">{lastWeatherUpdate}</span>
-              </div>
             </div>
           </div>
         </section>
