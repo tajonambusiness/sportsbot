@@ -291,7 +291,7 @@ export default function App() {
                   <div>
                     <span className="inline-flex items-center gap-2">
                       {source.name}
-                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${source.isLive ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${source.isLive ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
                         {source.status}
                       </span>
                     </span>
