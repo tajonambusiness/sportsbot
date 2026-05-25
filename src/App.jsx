@@ -244,7 +244,7 @@ export default function App() {
             <p className="mb-2 text-[11px] uppercase text-slate-400 sm:text-xs">Sources</p>
             <div className="space-y-1.5 sm:space-y-2">
               {sources.map((source) => (
-                <div key={source.name} className="flex items-center justify-between text-sm">
+                <div key={source.name} className="flex items-center justify-between text-sm" title={source.error || undefined}>
                   <span className="inline-flex items-center gap-2">
                     {source.name}
                     <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${source.isLive ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
