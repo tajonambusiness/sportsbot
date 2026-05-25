@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const MARKET_PRICE = 44
-const FALLBACK_FORECAST = 63
-
-const mockSources = [
-  { name: 'AccuWeather', value: 70 },
-  { name: 'NWS', value: 58 },
-]
+const FALLBACK_OPEN_METEO = 63
+const FALLBACK_NWS = 58
+const MOCK_ACCUWEATHER = 70
 
 const nextEdges = [
   { market: 'Will it rain in Miami tomorrow?', platform: 'Polymarket', forecast: '59%', price: '43¢', edge: '+16%', action: 'Watch', tone: 'watch' },
@@ -20,8 +17,8 @@ const toneClass = {
 }
 
 export default function App() {
-  const [forecastProbability, setForecastProbability] = useState(FALLBACK_FORECAST)
-  const [openMeteoLive, setOpenMeteoLive] = useState(false)
+  const [openMeteo, setOpenMeteo] = useState({ value: FALLBACK_OPEN_METEO, live: false })
+  const [nws, setNws] = useState({ value: FALLBACK_NWS, live: false })
   const [lastWeatherUpdate, setLastWeatherUpdate] = useState(new Date())
 
   useEffect(() => {
@@ -33,37 +30,96 @@ export default function App() {
           'https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060&daily=precipitation_probability_max&timezone=America%2FNew_York&forecast_days=2'
         const response = await fetch(url, { signal: controller.signal })
         if (!response.ok) throw new Error('Open-Meteo request failed')
-
         const data = await response.json()
         const probability = data?.daily?.precipitation_probability_max?.[1]
-
         if (typeof probability === 'number' && probability >= 0 && probability <= 100) {
-          setForecastProbability(Math.round(probability))
-          setOpenMeteoLive(true)
-          setLastWeatherUpdate(new Date())
+          setOpenMeteo({ value: Math.round(probability), live: true })
           return
         }
-
-        throw new Error('Open-Meteo response missing probability')
+        throw new Error('Open-Meteo probability missing')
       } catch {
-        setForecastProbability(FALLBACK_FORECAST)
-        setOpenMeteoLive(false)
-        setLastWeatherUpdate(new Date())
+        setOpenMeteo({ value: FALLBACK_OPEN_METEO, live: false })
       }
     }
 
-    loadOpenMeteo()
+    async function loadNws() {
+      try {
+        const pointsRes = await fetch('https://api.weather.gov/points/40.7128,-74.0060', {
+          signal: controller.signal,
+          headers: { Accept: 'application/geo+json' },
+        })
+        if (!pointsRes.ok) throw new Error('NWS points failed')
+        const pointsData = await pointsRes.json()
+        const hourlyUrl = pointsData?.properties?.forecastHourly
+        if (!hourlyUrl) throw new Error('NWS hourly URL missing')
+
+        const hourlyRes = await fetch(hourlyUrl, {
+          signal: controller.signal,
+          headers: { Accept: 'application/geo+json' },
+        })
+        if (!hourlyRes.ok) throw new Error('NWS hourly fetch failed')
+        const hourlyData = await hourlyRes.json()
+        const periods = hourlyData?.properties?.periods
+        if (!Array.isArray(periods)) throw new Error('NWS periods missing')
+
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomorrowYMD = tomorrow.toISOString().slice(0, 10)
+
+        const tomorrowValues = periods
+          .filter((p) => typeof p?.startTime === 'string' && p.startTime.slice(0, 10) === tomorrowYMD)
+          .map((p) => p?.probabilityOfPrecipitation?.value)
+          .filter((v) => typeof v === 'number')
+
+        if (tomorrowValues.length) {
+          const avg = Math.round(tomorrowValues.reduce((a, b) => a + b, 0) / tomorrowValues.length)
+          setNws({ value: avg, live: true })
+          return
+        }
+
+        throw new Error('NWS tomorrow precipitation missing')
+      } catch {
+        setNws({ value: FALLBACK_NWS, live: false })
+      }
+    }
+
+    Promise.allSettled([loadOpenMeteo(), loadNws()]).finally(() => {
+      setLastWeatherUpdate(new Date())
+    })
 
     return () => controller.abort()
   }, [])
 
-  const edgeValue = useMemo(() => forecastProbability - MARKET_PRICE, [forecastProbability])
+  const sourceData = useMemo(
+    () => [
+      { name: 'AccuWeather', value: MOCK_ACCUWEATHER, live: false, lockedMock: true },
+      { name: 'NWS', value: nws.value, live: nws.live },
+      { name: 'Open-Meteo', value: openMeteo.value, live: openMeteo.live },
+    ],
+    [nws, openMeteo],
+  )
+
+  const forecastProbability = useMemo(() => {
+    const values = sourceData.map((s) => s.value)
+    return Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+  }, [sourceData])
+
+  const sourceAgreement = useMemo(() => {
+    const values = sourceData.map((s) => s.value)
+    const spread = Math.max(...values) - Math.min(...values)
+    return Math.max(0, Math.min(100, 100 - spread * 2))
+  }, [sourceData])
+
+  const edgeValue = forecastProbability - MARKET_PRICE
   const edgeDisplay = `${edgeValue >= 0 ? '+' : ''}${edgeValue}%`
 
-  const sourceData = useMemo(
-    () => [...mockSources, { name: 'Open-Meteo', value: forecastProbability, live: openMeteoLive }],
-    [forecastProbability, openMeteoLive],
-  )
+  const confidence = useMemo(() => {
+    const liveCount = sourceData.filter((s) => s.live).length
+    const liveBoost = liveCount * 6
+    return Math.max(35, Math.min(96, Math.round(sourceAgreement * 0.65 + 20 + liveBoost)))
+  }, [sourceAgreement, sourceData])
+
+  const action = edgeValue >= 8 && confidence >= 65 ? 'POSSIBLE YES ↑' : edgeValue >= 0 ? 'WATCH' : 'SKIP'
 
   return (
     <main className="min-h-screen bg-base text-slate-100 px-3 py-3 sm:px-5 sm:py-5 lg:px-8 lg:py-8">
@@ -96,22 +152,23 @@ export default function App() {
               </p>
             </div>
             <div className="sm:col-span-2 rounded-xl border border-edge/40 bg-edge/10 p-3 text-center sm:p-4">
-              <p className="text-4xl font-bold text-edge sm:text-5xl">81%</p>
+              <p className="text-4xl font-bold text-edge sm:text-5xl">{confidence}%</p>
               <p className="text-[11px] uppercase text-slate-300 sm:text-xs">Confidence</p>
             </div>
           </div>
 
           <div className="rounded-xl border border-edge/50 bg-gradient-to-r from-edge/25 to-edge/15 p-2.5 shadow-[0_0_0_1px_rgba(74,222,128,0.35),0_0_28px_rgba(74,222,128,0.28)]">
             <button className="w-full rounded-lg border border-edge/60 bg-edge/20 px-4 py-3 text-base font-bold tracking-wide text-edge transition hover:bg-edge/30">
-              POSSIBLE YES ↑
+              {action}
             </button>
             <p className="mt-2 text-center text-xs text-slate-300">Market looks undervalued.</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-5">
             <Metric label="Market price" value={`${MARKET_PRICE}¢`} />
             <Metric label="Forecast probability" value={`${forecastProbability}%`} accent />
-            <Metric label="Time left" value="14h 32m" />
+            <Metric label="Edge" value={edgeDisplay} accent={edgeValue >= 0} />
+            <Metric label="Agreement" value={`${sourceAgreement}%`} />
             <Metric label="Liquidity" value="Good" accent />
           </div>
 
@@ -122,11 +179,11 @@ export default function App() {
                 <div key={source.name} className="flex items-center justify-between text-sm">
                   <span className="inline-flex items-center gap-2">
                     {source.name}
-                    {source.name === 'Open-Meteo' ? (
+                    {source.name === 'AccuWeather' ? null : (
                       <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${source.live ? 'border-edge/60 bg-edge/10 text-edge' : 'border-watch/60 bg-watch/10 text-watch'}`}>
                         {source.live ? 'LIVE' : 'MOCK'}
                       </span>
-                    ) : null}
+                    )}
                   </span>
                   <span className="font-semibold text-electric">{source.value}%</span>
                 </div>
@@ -134,8 +191,6 @@ export default function App() {
             </div>
           </div>
         </section>
-
-
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-center text-[11px] text-slate-300 sm:text-xs">
           Last weather update: <span className="font-semibold text-electric">{lastWeatherUpdate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
