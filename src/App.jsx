@@ -47,14 +47,10 @@ export default function App() {
             <div className="sm:col-span-2 rounded-xl border border-edge/40 bg-edge/10 p-3 text-center sm:p-4">
               <p className="text-4xl font-bold text-edge sm:text-5xl">81%</p>
               <p className="text-[11px] uppercase text-slate-300 sm:text-xs">Confidence</p>
+              <button className="mt-3 w-full rounded-lg border border-edge/50 bg-edge/20 px-4 py-2 text-sm font-bold tracking-wide text-edge transition hover:bg-edge/30 sm:mt-4 sm:py-2.5">
+                POSSIBLE YES
+              </button>
             </div>
-          </div>
-
-          <div className="rounded-xl border border-edge/50 bg-gradient-to-r from-edge/25 to-edge/15 p-2.5 shadow-[0_0_0_1px_rgba(74,222,128,0.35),0_0_28px_rgba(74,222,128,0.28)]">
-            <button className="w-full rounded-lg border border-edge/60 bg-edge/20 px-4 py-3 text-base font-bold tracking-wide text-edge transition hover:bg-edge/30">
-              POSSIBLE YES ↑
-            </button>
-            <p className="mt-2 text-center text-xs text-slate-300">Market looks undervalued.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
