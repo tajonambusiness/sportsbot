@@ -284,7 +284,8 @@ export default function App() {
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-            <p className="mb-2 text-[11px] uppercase text-slate-400 sm:text-xs">Sources (Live Status)</p>
+            <p className="mb-1 text-[11px] uppercase text-slate-400 sm:text-xs">Sources</p>
+            <p className="mb-2 text-[10px] text-slate-500 sm:text-[11px]">Badges show whether each feed is LIVE or MOCK fallback.</p>
             <div className="space-y-1.5 sm:space-y-2">
               {sources.map((source) => (
                 <div key={source.name} className="flex items-start justify-between gap-3 text-sm" title={source.error || undefined}>
