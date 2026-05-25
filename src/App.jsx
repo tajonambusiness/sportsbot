@@ -306,13 +306,13 @@ export default function App() {
             </div>
             <div className="mt-3 space-y-2 border-t border-slate-800 pt-2.5 text-xs sm:text-sm">
               <div className="flex items-center justify-between">
-                <span className="uppercase tracking-wide text-slate-400">Source Agreement</span>
+                <span className="uppercase tracking-wide text-slate-400">Source Agreement:</span>
                 <span className={`font-semibold ${sourceAgreement >= 75 ? 'text-edge' : sourceAgreement >= 50 ? 'text-watch' : 'text-skip'}`}>
                   {sourceAgreementLabel}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="uppercase tracking-wide text-slate-400">Last Weather Update</span>
+                <span className="uppercase tracking-wide text-slate-400">Last Weather Update:</span>
                 <span className="font-semibold text-electric">
                   {lastWeatherUpdate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                 </span>
