@@ -6,6 +6,7 @@ const FALLBACKS = {
   nws: 58,
   openMeteo: 63,
 }
+const SOURCE_ORDER = ['AccuWeather', 'NWS', 'Open-Meteo']
 
 const defaultMarket = {
   question: 'Will it rain in New York City tomorrow?',
@@ -151,21 +152,19 @@ export default function App() {
       }
     }
 
-    const adapters = [
-      loadAccuWeather,
-      loadNws,
-      loadOpenMeteo,
+    const sourceAdapters = [
+      { name: 'AccuWeather', run: loadAccuWeather, fallback: FALLBACKS.accuweather },
+      { name: 'NWS', run: loadNws, fallback: FALLBACKS.nws },
+      { name: 'Open-Meteo', run: loadOpenMeteo, fallback: FALLBACKS.openMeteo },
     ]
 
-    Promise.allSettled(adapters.map((adapter) => adapter())).then((results) => {
-      const normalized = results.map((r, idx) => {
-        if (r.status === 'fulfilled') return r.value
-        return [
-          sourceResult('AccuWeather', FALLBACKS.accuweather, false, 'Unhandled error'),
-          sourceResult('NWS', FALLBACKS.nws, false, 'Unhandled error'),
-          sourceResult('Open-Meteo', FALLBACKS.openMeteo, false, 'Unhandled error'),
-        ][idx]
+    Promise.allSettled(sourceAdapters.map((adapter) => adapter.run())).then((results) => {
+      const normalized = results.map((result, idx) => {
+        if (result.status === 'fulfilled') return result.value
+        const adapter = sourceAdapters[idx]
+        return sourceResult(adapter.name, adapter.fallback, false, 'Unhandled error')
       })
+      normalized.sort((a, b) => SOURCE_ORDER.indexOf(a.name) - SOURCE_ORDER.indexOf(b.name))
       setSources(normalized)
       setLastWeatherUpdate(new Date())
     })
