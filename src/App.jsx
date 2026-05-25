@@ -48,6 +48,12 @@ function sourceResult(name, value, isLive, error = '') {
   }
 }
 
+function coerceProbability(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null
+  if (value < 0 || value > 100) return null
+  return Math.round(value)
+}
+
 export default function App() {
   const [market] = useState(defaultMarket)
   const [sources, setSources] = useState(
@@ -66,9 +72,9 @@ export default function App() {
         const response = await fetch(url, { signal: controller.signal })
         if (!response.ok) throw new Error('Open-Meteo request failed')
         const data = await response.json()
-        const probability = data?.daily?.precipitation_probability_max?.[1]
-        if (typeof probability === 'number' && probability >= 0 && probability <= 100) {
-          return sourceResult('Open-Meteo', Math.round(probability), true)
+        const probability = coerceProbability(data?.daily?.precipitation_probability_max?.[1])
+        if (probability !== null) {
+          return sourceResult('Open-Meteo', probability, true)
         }
         throw new Error('Missing tomorrow precipitation probability')
       } catch (error) {
@@ -143,7 +149,7 @@ export default function App() {
         const dayChance = forecastData?.DailyForecasts?.[0]?.Day?.PrecipitationProbability
         const nightChance = forecastData?.DailyForecasts?.[0]?.Night?.PrecipitationProbability
 
-        const vals = [dayChance, nightChance].filter((v) => typeof v === 'number')
+        const vals = [dayChance, nightChance].map(coerceProbability).filter((v) => v !== null)
         if (vals.length) {
           const probability = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
           return sourceResult('AccuWeather', probability, true)
@@ -162,6 +168,8 @@ export default function App() {
     ]
 
     Promise.allSettled(sourceAdapters.map((adapter) => adapter.run())).then((results) => {
+      if (controller.signal.aborted) return
+
       const normalized = results.map((result, idx) => {
         if (result.status === 'fulfilled') return result.value
         const adapter = sourceAdapters[idx]
